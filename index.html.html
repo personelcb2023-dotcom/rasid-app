@@ -1,0 +1,1629 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>راصد المشاركة والنتائج | متابعة نسبة المشاركة وفرز الأصوات لحظياً</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Cairo -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <!-- Chart.js for Interactive Charts -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Font Awesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Cairo', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            font-family: 'Cairo', sans-serif;
+            background-color: #f8fafc;
+            color: #0f172a;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .pulse-dot {
+            animation: pulse-animation 2s infinite;
+        }
+        @keyframes pulse-animation {
+            0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+            70% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+        .btn-tap:active {
+            transform: scale(0.96);
+        }
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 9999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col bg-slate-50 text-slate-900">
+
+    <!-- Toast Notification Container (Replaces alert) -->
+    <div id="toast-container" class="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 flex flex-col gap-2 w-11/12 max-w-md pointer-events-none"></div>
+
+    <!-- Custom Confirmation Modal (Replaces confirm) -->
+    <div id="confirm-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-100 transform transition-all">
+            <div class="w-12 h-12 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-xl mb-4 mx-auto">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+            </div>
+            <h3 id="confirm-title" class="text-lg font-bold text-center text-slate-800 mb-2">تأكيد الإجراء</h3>
+            <p id="confirm-message" class="text-sm text-slate-600 text-center mb-6 leading-relaxed">هل أنت متأكد من رغبتك في المتابعة؟</p>
+            <div class="flex gap-3">
+                <button id="confirm-yes" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl transition">تأكيد</button>
+                <button id="confirm-no" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 px-4 rounded-xl transition">إلغاء</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Top Navigation Bar -->
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white flex items-center justify-center text-xl shadow-md">
+                    <i class="fa-solid fa-check-to-slot"></i>
+                </div>
+                <div>
+                    <h1 class="text-base sm:text-xl font-extrabold text-slate-900 leading-tight">راصد المشاركة والنتائج</h1>
+                    <p class="text-[11px] text-slate-500 font-medium hidden sm:block">نظام متابعة الإقبال وفرز الأحزاب (4 مكاتب • 1200 مسجل)</p>
+                </div>
+            </div>
+
+            <!-- Room Badge & Connection Status -->
+            <div id="header-room-controls" class="hidden items-center gap-2 sm:gap-3">
+                <div class="flex items-center gap-2 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200">
+                    <span id="connection-dot" class="w-2.5 h-2.5 rounded-full bg-emerald-500 pulse-dot"></span>
+                    <span class="text-xs font-semibold text-slate-600 hidden md:inline">غرفة:</span>
+                    <span id="header-room-code" class="font-mono font-extrabold text-sm sm:text-base text-blue-700 tracking-wider">----</span>
+                    <button onclick="copyRoomCode()" title="نسخ رمز الغرفة" class="text-slate-500 hover:text-blue-600 p-1 rounded-lg transition">
+                        <i class="fa-regular fa-copy"></i>
+                    </button>
+                </div>
+                <button onclick="copyInviteLink()" title="نسخ رابط الدعوة المباشر" class="bg-blue-50 hover:bg-blue-100 text-blue-700 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 transition border border-blue-200">
+                    <i class="fa-solid fa-share-nodes"></i>
+                    <span class="hidden sm:inline">رابط الدعوة</span>
+                </button>
+                <button onclick="leaveRoom()" title="تغيير الدور أو الخروج" class="bg-rose-50 hover:bg-rose-100 text-rose-600 p-2 rounded-xl text-sm font-bold transition border border-rose-200">
+                    <i class="fa-solid fa-right-from-bracket"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+
+        <!-- ==================== VIEW 1: ROLE & ROOM SELECTION ==================== -->
+        <section id="view-landing" class="max-w-4xl mx-auto py-2 sm:py-6">
+            <div class="text-center mb-8">
+                <div class="inline-flex flex-wrap justify-center items-center gap-2 px-4 py-1.5 rounded-full text-xs font-bold bg-blue-100 text-blue-800 mb-3">
+                    <span><i class="fa-solid fa-users"></i> 1,200 ناخب مسجل</span>
+                    <span>•</span>
+                    <span><i class="fa-solid fa-building"></i> 4 مكاتب تصويت</span>
+                    <span>•</span>
+                    <span><i class="fa-solid fa-flag"></i> 4 أحزاب (RND • FLN • MCN • HAMS)</span>
+                </div>
+                <h2 class="text-2xl sm:text-4xl font-black text-slate-900 mb-3">متابعة نسبة المشاركة ونتائج الفرز لحظياً</h2>
+                <p class="text-slate-600 text-sm sm:text-base max-w-2xl mx-auto leading-relaxed">
+                    اربط هواتف المراقبين في المكاتب الأربعة بغرفة المتابعة المركزية عبر رمز مشترك لرصد الإقبال أثناء الاقتراع وتسجيل نتائج فرز الأحزاب فور إغلاق الصناديق.
+                </p>
+            </div>
+
+            <!-- Connection Mode Indicator -->
+            <div id="auth-loading" class="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 text-center mb-6">
+                <i class="fa-solid fa-circle-notch fa-spin text-2xl text-blue-600 mb-2"></i>
+                <p class="text-slate-600 font-bold text-sm">جاري تهيئة الاتصال السحابي والمحلي...</p>
+            </div>
+
+            <!-- Role Selection Cards -->
+            <div id="role-selection-grid" class="hidden grid-cols-1 md:grid-cols-2 gap-6">
+                
+                <!-- Card 1: Supervisor / Monitoring Room -->
+                <div class="bg-white rounded-3xl p-6 sm:p-8 shadow-md border border-slate-200/80 hover:border-blue-400 transition flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between mb-5">
+                            <div class="w-14 h-14 rounded-2xl bg-indigo-100 text-indigo-600 flex items-center justify-center text-2xl">
+                                <i class="fa-solid fa-chart-pie"></i>
+                            </div>
+                            <span id="mode-badge" class="text-[11px] font-bold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                <i class="fa-solid fa-wifi"></i> مزامنة فورية جاهزة
+                            </span>
+                        </div>
+                        <h3 class="text-xl font-extrabold text-slate-900 mb-2">مشرف غرفة المتابعة</h3>
+                        <p class="text-slate-600 text-sm leading-relaxed mb-6">
+                            أنشئ غرفة برمز مشترك (مثل DZ-2026) لمراقبة نسبة المشاركة الإجمالية من أصل 1,200 مسجل، ومتابعة فرز أصوات الأحزاب الأربعة والرسوم البيانية.
+                        </p>
+                    </div>
+
+                    <div class="space-y-3">
+                        <button onclick="createNewSupervisorRoom()" class="w-full btn-tap bg-gradient-to-l from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold py-3.5 px-5 rounded-2xl shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2 transition">
+                            <i class="fa-solid fa-plus-circle"></i>
+                            <span>إنشاء غرفة متابعة جديدة</span>
+                        </button>
+
+                        <button onclick="loadDemoSimulation()" class="w-full btn-tap bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 font-bold py-2.5 px-4 rounded-2xl text-xs sm:text-sm flex items-center justify-center gap-2 transition">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i>
+                            <span>تشغيل وضع المحاكاة التجريبية (بيانات جاهزة للمعاينة)</span>
+                        </button>
+
+                        <div class="relative flex py-1.5 items-center">
+                            <div class="flex-grow border-t border-slate-200"></div>
+                            <span class="flex-shrink mx-3 text-xs text-slate-400 font-semibold">أو دخول غرفة قائمة كمشرف</span>
+                            <div class="flex-grow border-t border-slate-200"></div>
+                        </div>
+
+                        <div class="flex gap-2">
+                            <input type="text" id="supervisor-room-input" maxlength="10" placeholder="رمز الغرفة (مثال: DZ-2026)" 
+                                class="flex-1 bg-slate-50 border border-slate-300 rounded-xl px-4 py-2.5 text-center font-mono font-bold uppercase tracking-widest text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <button onclick="joinAsSupervisor()" class="bg-slate-800 hover:bg-slate-900 text-white font-bold px-5 py-2.5 rounded-xl transition">
+                                دخول
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Card 2: Field Observer / Polling Station -->
+                <div class="bg-white rounded-3xl p-6 sm:p-8 shadow-md border border-slate-200/80 hover:border-emerald-400 transition flex flex-col justify-between">
+                    <div>
+                        <div class="w-14 h-14 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center text-2xl mb-5">
+                            <i class="fa-solid fa-mobile-screen-button"></i>
+                        </div>
+                        <h3 class="text-xl font-extrabold text-slate-900 mb-2">مراقب ميداني (مكتب تصويت)</h3>
+                        <p class="text-slate-600 text-sm leading-relaxed mb-5">
+                            أدخل رمز الغرفة المشترك واختر مكتب التصويت المخصص لك (من مكتب 01 إلى مكتب 04) لتسجيل المصوتين وإدخال نتائج فرز الأحزاب.
+                        </p>
+                    </div>
+
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">رمز الغرفة المشترك (Room Code)</label>
+                            <input type="text" id="observer-room-input" maxlength="10" placeholder="أدخل الرمز (مثال: DZ-2026)" 
+                                class="w-full bg-emerald-50/50 border-2 border-emerald-200 rounded-2xl px-4 py-3 text-center font-mono text-lg font-black uppercase tracking-widest text-emerald-900 focus:outline-none focus:border-emerald-500">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">اختر مكتب التصويت</label>
+                            <select id="landing-station-select" class="w-full bg-slate-50 border border-slate-300 rounded-2xl px-4 py-3 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                                <option value="station_01">مكتب 01 (300 ناخب مسجل)</option>
+                                <option value="station_02">مكتب 02 (300 ناخب مسجل)</option>
+                                <option value="station_03">مكتب 03 (300 ناخب مسجل)</option>
+                                <option value="station_04">مكتب 04 (300 ناخب مسجل)</option>
+                            </select>
+                        </div>
+
+                        <button onclick="joinAsObserver()" class="w-full btn-tap bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3.5 px-5 rounded-2xl shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2 transition">
+                            <i class="fa-solid fa-link"></i>
+                            <span>اتصال بالمكتب وإرسال البيانات</span>
+                        </button>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- ==================== VIEW 2: FIELD OBSERVER INTERFACE ==================== -->
+        <section id="view-observer" class="hidden max-w-xl mx-auto space-y-5">
+            
+            <!-- Station Selector & Registered Voters Card -->
+            <div class="bg-white rounded-3xl p-5 shadow-sm border border-slate-200">
+                <div class="flex items-center justify-between mb-3">
+                    <span class="text-xs font-extrabold text-slate-500 uppercase tracking-wider">المكتب النشط حالياً</span>
+                    <span id="sync-status-badge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        <i class="fa-solid fa-cloud-arrow-up"></i> متزامن لحظياً
+                    </span>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">تبديل مكتب التصويت</label>
+                        <select id="observer-station-select" onchange="switchObserverStation(this.value)" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-extrabold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                            <option value="station_01">مكتب 01</option>
+                            <option value="station_02">مكتب 02</option>
+                            <option value="station_03">مكتب 03</option>
+                            <option value="station_04">مكتب 04</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">عدد المسجلين بالمكتب (الافتراضي 300)</label>
+                        <div class="flex gap-2">
+                            <input type="number" id="station-registered-input" min="1" value="300" 
+                                class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                            <button onclick="updateStationRegistered()" class="bg-slate-800 hover:bg-slate-900 text-white font-bold px-3.5 rounded-xl text-xs transition" title="حفظ عدد المسجلين">
+                                حفظ
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Live Turnout Summary Banner -->
+            <div class="bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 text-white rounded-3xl p-5 sm:p-6 shadow-xl">
+                <div class="flex justify-between items-start mb-3">
+                    <div>
+                        <span id="obs-station-title" class="text-xs font-bold text-emerald-400 block mb-0.5">مكتب 01</span>
+                        <span class="text-xs text-slate-300 block">نسبة المشاركة في هذا المكتب</span>
+                        <div class="text-4xl sm:text-5xl font-black text-white tracking-tight mt-1" id="obs-percentage">0.0%</div>
+                    </div>
+                    <div class="text-left bg-white/10 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-white/10">
+                        <span class="text-[11px] text-slate-300 block">المصوتون / المسجلون</span>
+                        <span class="text-xl font-black text-white">
+                            <span id="obs-voted-display">0</span>
+                            <span class="text-xs font-normal text-slate-400">/ <span id="obs-reg-display">300</span></span>
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Progress Bar -->
+                <div class="w-full bg-slate-700/80 h-3.5 rounded-full overflow-hidden p-0.5 mb-2">
+                    <div id="obs-progress-bar" class="bg-gradient-to-l from-emerald-400 to-teal-500 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
+                </div>
+                <div class="flex justify-between text-[11px] text-slate-400 font-medium">
+                    <span>0%</span>
+                    <span id="obs-last-update">جاهز للإرسال</span>
+                    <span>100%</span>
+                </div>
+            </div>
+
+            <!-- Observer Mode Tabs: 1) Turnout Tracking  2) Party Results Counting -->
+            <div class="bg-slate-200/80 p-1.5 rounded-2xl grid grid-cols-2 gap-1.5">
+                <button id="tab-btn-turnout" onclick="switchObserverTab('turnout')" class="py-3 px-4 rounded-xl text-sm font-extrabold bg-white text-blue-700 shadow-sm transition flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-users-line"></i>
+                    <span>1. متابعة المشاركة</span>
+                </button>
+                <button id="tab-btn-counting" onclick="switchObserverTab('counting')" class="py-3 px-4 rounded-xl text-sm font-extrabold text-slate-600 hover:text-slate-900 transition flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-square-poll-vertical"></i>
+                    <span>2. فرز الأحزاب الأربعة</span>
+                </button>
+            </div>
+
+            <!-- TAB 1: TURNOUT TRACKING -->
+            <div id="obs-tab-turnout" class="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 space-y-4">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-sm font-extrabold text-slate-800">تسجيل سريع للمصوتين أثناء الاقتراع</h3>
+                    <span class="text-xs text-slate-400 font-semibold">إرسال فوري</span>
+                </div>
+
+                <!-- Primary +1 Button -->
+                <button onclick="incrementVotes(1)" class="w-full btn-tap bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-2xl py-6 px-4 shadow-lg shadow-emerald-600/25 flex flex-col items-center justify-center transition select-none">
+                    <span class="text-3xl sm:text-4xl font-black tracking-tight">+1 مصوت</span>
+                    <span class="text-xs text-emerald-100 mt-1 font-medium">تسجيل ناخب واحد فوراً</span>
+                </button>
+
+                <!-- Secondary +5, +10, -1 Buttons -->
+                <div class="grid grid-cols-3 gap-3">
+                    <button onclick="incrementVotes(5)" class="btn-tap bg-blue-600 hover:bg-blue-700 text-white font-black text-xl py-4 rounded-2xl shadow-md shadow-blue-600/15 transition select-none">
+                        +5
+                    </button>
+                    <button onclick="incrementVotes(10)" class="btn-tap bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xl py-4 rounded-2xl shadow-md shadow-indigo-600/15 transition select-none">
+                        +10
+                    </button>
+                    <button onclick="incrementVotes(-1)" class="btn-tap bg-rose-100 hover:bg-rose-200 text-rose-700 font-black text-lg py-4 rounded-2xl border border-rose-200 transition select-none">
+                        -1 تراجع
+                    </button>
+                </div>
+
+                <!-- Direct Manual Input Override -->
+                <div class="pt-4 border-t border-slate-100">
+                    <label class="block text-xs font-bold text-slate-600 mb-2">أو تعديل العدد الإجمالي للمصوتين بالمكتب يدوياً:</label>
+                    <div class="flex gap-2">
+                        <input type="number" id="manual-votes-input" min="0" placeholder="أدخل العدد الإجمالي..." 
+                            class="flex-1 bg-slate-50 border border-slate-300 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <button onclick="setManualVotes()" class="bg-slate-800 hover:bg-slate-900 text-white font-bold px-5 py-2.5 rounded-xl text-sm transition">
+                            تحديث
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 2: PARTY RESULTS COUNTING (RND, FLN, MCN, HAMS + Invalid) -->
+            <div id="obs-tab-counting" class="hidden bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 space-y-4">
+                <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <div>
+                        <h3 class="text-base font-extrabold text-slate-800">محضر فرز أصوات الأحزاب</h3>
+                        <p class="text-xs text-slate-500">أدخل الأصوات التي تحصل عليها كل حزب في هذا المكتب</p>
+                    </div>
+                    <div class="text-left">
+                        <span class="text-[11px] text-slate-400 block">مجموع الفرز</span>
+                        <span id="counting-sum-badge" class="font-black text-sm text-blue-700">0 / 0</span>
+                    </div>
+                </div>
+
+                <!-- Validation Alert Banner -->
+                <div id="counting-warning-box" class="hidden bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-2xl text-xs font-bold flex items-center gap-2">
+                    <i class="fa-solid fa-triangle-exclamation text-base"></i>
+                    <span id="counting-warning-text">تنبيه: مجموع الأصوات المفروزة يتجاوز عدد المصوتين!</span>
+                </div>
+
+                <!-- Party Cards Container -->
+                <div id="party-counting-list" class="space-y-3">
+                    <!-- Rendered dynamically via JS for RND, FLN, MCN, HAMS -->
+                </div>
+
+                <!-- Invalid / Blank Ballots -->
+                <div class="p-4 rounded-2xl bg-slate-50 border border-slate-200">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="font-extrabold text-sm text-slate-700 flex items-center gap-2">
+                            <i class="fa-solid fa-ban text-slate-400"></i> الأوراق الملغاة والبيضاء
+                        </span>
+                        <span id="count-val-invalid" class="font-black text-lg text-slate-800">0</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="adjustPartyVote('invalid', -1)" class="btn-tap bg-rose-100 text-rose-700 font-black px-3 py-2 rounded-xl text-sm">-1</button>
+                        <button onclick="adjustPartyVote('invalid', 1)" class="btn-tap bg-slate-700 text-white font-black px-3.5 py-2 rounded-xl text-sm">+1</button>
+                        <button onclick="adjustPartyVote('invalid', 5)" class="btn-tap bg-slate-600 text-white font-black px-3.5 py-2 rounded-xl text-sm">+5</button>
+                        <input type="number" id="input-party-invalid" min="0" value="0" onchange="setDirectPartyVote('invalid', this.value)"
+                            class="flex-1 bg-white border border-slate-300 rounded-xl px-3 py-2 text-center font-bold text-sm text-slate-800">
+                    </div>
+                </div>
+
+                <!-- Submit Counting Results Button -->
+                <button onclick="submitCountingResults()" class="w-full btn-tap bg-gradient-to-l from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white font-extrabold py-4 px-5 rounded-2xl shadow-lg shadow-blue-600/25 flex items-center justify-center gap-2 transition">
+                    <i class="fa-solid fa-paper-plane"></i>
+                    <span>اعتماد وإرسال نتائج الفرز للمشرف</span>
+                </button>
+            </div>
+
+        </section>
+
+        <!-- ==================== VIEW 3: SUPERVISOR DASHBOARD ==================== -->
+        <section id="view-supervisor" class="hidden space-y-6">
+            
+            <!-- Top Action & Room Banner -->
+            <div class="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div>
+                    <div class="flex flex-wrap items-center gap-2 mb-1">
+                        <span class="px-2.5 py-0.5 rounded-md text-xs font-extrabold bg-indigo-100 text-indigo-700">غرفة المتابعة المركزية</span>
+                        <span class="text-xs text-slate-500 font-semibold" id="sup-last-sync">تحديث تلقائي مباشر</span>
+                    </div>
+                    <h2 class="text-xl sm:text-2xl font-black text-slate-900">لوحة قيادة المشاركة ونتائج الأحزاب</h2>
+                </div>
+
+                <div class="flex flex-wrap items-center gap-2.5">
+                    <div class="bg-blue-50 border border-blue-200 rounded-2xl px-4 py-2 flex items-center gap-3">
+                        <div>
+                            <span class="text-[10px] text-blue-600 font-bold block">رمز الغرفة للمراقبين</span>
+                            <span id="sup-banner-code" class="font-mono text-lg font-black text-blue-900 tracking-widest">DZ-2026</span>
+                        </div>
+                        <button onclick="copyRoomCode()" class="w-9 h-9 rounded-xl bg-blue-600 text-white hover:bg-blue-700 flex items-center justify-center transition" title="نسخ الرمز">
+                            <i class="fa-regular fa-copy"></i>
+                        </button>
+                    </div>
+
+                    <button onclick="exportToCSV()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-3 rounded-2xl text-xs sm:text-sm shadow-md shadow-emerald-600/20 flex items-center gap-2 transition">
+                        <i class="fa-solid fa-file-excel"></i>
+                        <span>تصدير Excel / CSV</span>
+                    </button>
+
+                    <button onclick="exportHTMLReport()" class="bg-slate-800 hover:bg-slate-900 text-white font-bold px-4 py-3 rounded-2xl text-xs sm:text-sm shadow-md flex items-center gap-2 transition">
+                        <i class="fa-solid fa-file-code"></i>
+                        <span>تحميل تقرير HTML</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 4 KPI Summary Cards -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <!-- KPI 1: Overall Turnout Percentage -->
+                <div class="bg-gradient-to-br from-blue-600 to-indigo-700 text-white rounded-3xl p-5 shadow-lg shadow-blue-600/15">
+                    <div class="flex justify-between items-start mb-3">
+                        <span class="text-xs font-bold text-blue-100">نسبة المشاركة الإجمالية</span>
+                        <div class="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center text-white">
+                            <i class="fa-solid fa-percent"></i>
+                        </div>
+                    </div>
+                    <div class="text-3xl sm:text-4xl font-black mb-2" id="kpi-percentage">0.00%</div>
+                    <div class="w-full bg-black/20 h-2 rounded-full overflow-hidden">
+                        <div id="kpi-progress-bar" class="bg-emerald-400 h-full rounded-full transition-all duration-500" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <!-- KPI 2: Total Voted -->
+                <div class="bg-white rounded-3xl p-5 shadow-sm border border-slate-200">
+                    <div class="flex justify-between items-start mb-3">
+                        <span class="text-xs font-bold text-slate-500">إجمالي المصوتين الفعلي</span>
+                        <div class="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center">
+                            <i class="fa-solid fa-users-viewfinder"></i>
+                        </div>
+                    </div>
+                    <div class="text-3xl font-black text-slate-900 mb-1" id="kpi-total-voted">0</div>
+                    <span class="text-xs text-emerald-600 font-bold">من أصل <span id="kpi-reg-sub">1,200</span> مسجل</span>
+                </div>
+
+                <!-- KPI 3: Total Registered -->
+                <div class="bg-white rounded-3xl p-5 shadow-sm border border-slate-200">
+                    <div class="flex justify-between items-start mb-3">
+                        <span class="text-xs font-bold text-slate-500">إجمالي الناخبين المسجلين</span>
+                        <div class="w-9 h-9 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center">
+                            <i class="fa-solid fa-address-book"></i>
+                        </div>
+                    </div>
+                    <div class="text-3xl font-black text-slate-900 mb-1" id="kpi-total-registered">1,200</div>
+                    <span class="text-xs text-slate-500 font-semibold">موزعين على 4 مكاتب تصويت</span>
+                </div>
+
+                <!-- KPI 4: Connected Stations -->
+                <div class="bg-white rounded-3xl p-5 shadow-sm border border-slate-200">
+                    <div class="flex justify-between items-start mb-3">
+                        <span class="text-xs font-bold text-slate-500">مكاتب التصويت النشطة</span>
+                        <div class="w-9 h-9 rounded-xl bg-purple-100 text-purple-600 flex items-center justify-center">
+                            <i class="fa-solid fa-tower-broadcast"></i>
+                        </div>
+                    </div>
+                    <div class="text-3xl font-black text-slate-900 mb-1"><span id="kpi-stations-count">0</span> <span class="text-lg font-bold text-slate-400">/ 4</span></div>
+                    <span class="text-xs text-purple-600 font-bold">مكاتب أرسلت تحديثات</span>
+                </div>
+            </div>
+
+            <!-- 4 POLITICAL PARTIES RESULTS SECTION (RND, FLN, MCN, HAMS) -->
+            <div class="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-5">
+                    <div>
+                        <h3 class="text-lg font-black text-slate-900 flex items-center gap-2">
+                            <i class="fa-solid fa-ranking-star text-indigo-600"></i>
+                            <span>نتائج فرز الأحزاب المتنافسة</span>
+                        </h3>
+                        <p class="text-xs text-slate-500">تجميع لحظي للأصوات المعبر عنها من المكاتب الأربعة (RND - FLN - MCN - HAMS)</p>
+                    </div>
+                    <div class="flex items-center gap-3 text-xs font-bold bg-slate-50 px-3.5 py-2 rounded-xl border border-slate-200">
+                        <span class="text-slate-600">الأصوات المعبر عنها: <strong id="total-valid-votes" class="text-blue-700">0</strong></span>
+                        <span class="text-slate-300">|</span>
+                        <span class="text-slate-600">الأوراق الملغاة: <strong id="total-invalid-votes" class="text-rose-600">0</strong></span>
+                    </div>
+                </div>
+
+                <div id="parties-kpi-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <!-- Rendered dynamically for RND, FLN, MCN, HAMS -->
+                </div>
+            </div>
+
+            <!-- Interactive Charts Row (3 Charts: Stations Turnout, Party Distribution, Timeline) -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Chart 1: Bar Chart Comparison Between 4 Stations -->
+                <div class="bg-white rounded-3xl p-5 shadow-sm border border-slate-200">
+                    <div class="mb-4">
+                        <h3 class="text-base font-extrabold text-slate-800">نسبة المشاركة حسب المكتب</h3>
+                        <p class="text-xs text-slate-500">مقارنة الإقبال بين المكاتب الأربعة (%)</p>
+                    </div>
+                    <div class="relative h-60 w-full">
+                        <canvas id="stationsChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Chart 2: Doughnut Chart Distribution Between 4 Parties -->
+                <div class="bg-white rounded-3xl p-5 shadow-sm border border-slate-200">
+                    <div class="mb-4">
+                        <h3 class="text-base font-extrabold text-slate-800">توزيع أصوات الأحزاب</h3>
+                        <p class="text-xs text-slate-500">النسب المئوية للأحزاب الأربعة (RND, FLN, MCN, HAMS)</p>
+                    </div>
+                    <div class="relative h-60 w-full">
+                        <canvas id="partiesChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Chart 3: Line Chart Turnout Progression Over Time -->
+                <div class="bg-white rounded-3xl p-5 shadow-sm border border-slate-200">
+                    <div class="mb-4">
+                        <h3 class="text-base font-extrabold text-slate-800">تطور المشاركة التراكمية</h3>
+                        <p class="text-xs text-slate-500">تصاعد نسبة الإقبال الإجمالية عبر الزمن</p>
+                    </div>
+                    <div class="relative h-60 w-full">
+                        <canvas id="timelineChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bottom Row: Detailed 4 Stations Table & Live Activity Feed -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                
+                <!-- Stations Table (Takes 2/3 width on Desktop) -->
+                <div class="lg:col-span-2 bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+                    <div class="p-5 sm:p-6 border-b border-slate-100 flex items-center justify-between">
+                        <div>
+                            <h3 class="text-base font-extrabold text-slate-800">الجدول التفصيلي للمكاتب الأربعة والنتائج</h3>
+                            <p class="text-xs text-slate-500">إجمالي 1,200 ناخب مسجل (300 لكل مكتب) وتفصيل أصوات الأحزاب</p>
+                        </div>
+                        <span class="px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700">4 مكاتب تصويت</span>
+                    </div>
+
+                    <div class="overflow-x-auto flex-1">
+                        <table class="w-full text-center border-collapse">
+                            <thead>
+                                <tr class="bg-slate-50 text-slate-600 text-xs font-extrabold border-b border-slate-200">
+                                    <th class="py-3.5 px-3 text-right">المكتب</th>
+                                    <th class="py-3.5 px-2">المسجلون</th>
+                                    <th class="py-3.5 px-2">المصوتون</th>
+                                    <th class="py-3.5 px-3">المشاركة</th>
+                                    <th class="py-3.5 px-2 text-blue-700">RND</th>
+                                    <th class="py-3.5 px-2 text-rose-700">FLN</th>
+                                    <th class="py-3.5 px-2 text-amber-700">MCN</th>
+                                    <th class="py-3.5 px-2 text-emerald-700">HAMS</th>
+                                    <th class="py-3.5 px-2 text-slate-500">ملغاة</th>
+                                </tr>
+                            </thead>
+                            <tbody id="stations-table-body" class="divide-y divide-slate-100 text-sm">
+                                <!-- Rendered dynamically for 4 stations -->
+                            </tbody>
+                            <tfoot id="stations-table-foot" class="bg-slate-100 font-black text-xs sm:text-sm text-slate-900 border-t-2 border-slate-200">
+                                <!-- Totals Row -->
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Live Feed (Takes 1/3 width on Desktop) -->
+                <div class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden flex flex-col max-h-[500px]">
+                    <div class="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                        <div class="flex items-center gap-2">
+                            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 pulse-dot"></span>
+                            <h3 class="text-base font-extrabold text-slate-800">السجل الزمني المباشر</h3>
+                        </div>
+                        <span class="text-[11px] font-bold text-slate-400">Live Feed</span>
+                    </div>
+
+                    <div id="live-feed-list" class="p-4 space-y-3 overflow-y-auto flex-1">
+                        <div class="text-center py-10 text-slate-400 text-xs">
+                            ستظهر هنا التحديثات اللحظية الواردة من المكاتب الأربعة.
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t border-slate-200 py-4 mt-auto">
+        <div class="max-w-7xl mx-auto px-4 text-center text-xs text-slate-500 font-medium">
+            راصد المشاركة والنتائج — متابعة نسبة المشاركة وفرز الأحزاب في الوقت الفعلي
+        </div>
+    </footer>
+
+    <!-- Firebase & Application Logic -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // ==================== CONSTANTS & CONFIGURATION ====================
+        const PARTIES = [
+            { id: 'RND', name: 'RND', fullName: 'التجمع الوطني الديمقراطي', color: '#2563eb', bgLight: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', btn: 'bg-blue-600 hover:bg-blue-700' },
+            { id: 'FLN', name: 'FLN', fullName: 'جبهة التحرير الوطني', color: '#e11d48', bgLight: 'bg-rose-50', border: 'border-rose-200', text: 'text-rose-700', btn: 'bg-rose-600 hover:bg-rose-700' },
+            { id: 'MCN', name: 'MCN', fullName: 'حركة البناء الوطني', color: '#d97706', bgLight: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', btn: 'bg-amber-600 hover:bg-amber-700' },
+            { id: 'HAMS', name: 'HAMS', fullName: 'حركة مجتمع السلم', color: '#059669', bgLight: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700', btn: 'bg-emerald-600 hover:bg-emerald-700' }
+        ];
+
+        const DEFAULT_STATIONS = [
+            { id: 'station_01', name: 'مكتب 01', registered: 300 },
+            { id: 'station_02', name: 'مكتب 02', registered: 300 },
+            { id: 'station_03', name: 'مكتب 03', registered: 300 },
+            { id: 'station_04', name: 'مكتب 04', registered: 300 }
+        ];
+
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'election-turnout-results-dz';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+
+        let app, auth, db;
+        let useFirebase = false;
+        let currentUser = null;
+        let currentRole = null; // 'supervisor' | 'observer'
+        let currentRoomCode = null;
+        let activeStationId = 'station_01';
+
+        // Unified State for the 4 Stations (1200 total registered)
+        let roomStationsMap = {};
+        let logsData = [];
+
+        // Chart.js Instances
+        let stationsChartInstance = null;
+        let partiesChartInstance = null;
+        let timelineChartInstance = null;
+
+        // Firestore Listeners
+        let unsubscribeStations = null;
+        let unsubscribeLogs = null;
+
+        function createDefaultStationsState() {
+            const map = {};
+            DEFAULT_STATIONS.forEach(st => {
+                map[st.id] = {
+                    stationId: st.id,
+                    stationName: st.name,
+                    registered: st.registered,
+                    voted: 0,
+                    votes: { RND: 0, FLN: 0, MCN: 0, HAMS: 0 },
+                    invalid: 0,
+                    updatedAt: null
+                };
+            });
+            return map;
+        }
+
+        roomStationsMap = createDefaultStationsState();
+
+        // ==================== UI UTILITIES (TOAST & CONFIRM) ====================
+        window.showToast = function(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            
+            const styles = {
+                success: 'bg-emerald-600 text-white border-emerald-700',
+                error: 'bg-rose-600 text-white border-rose-700',
+                warning: 'bg-amber-500 text-white border-amber-600',
+                info: 'bg-slate-800 text-white border-slate-900'
+            };
+            const icons = {
+                success: 'fa-circle-check',
+                error: 'fa-circle-exclamation',
+                warning: 'fa-triangle-exclamation',
+                info: 'fa-circle-info'
+            };
+
+            toast.className = `${styles[type] || styles.info} pointer-events-auto px-4 py-3 rounded-2xl shadow-xl border flex items-center gap-3 text-sm font-bold transform transition-all duration-300 translate-y-[-10px] opacity-0`;
+            toast.innerHTML = `<i class="fa-solid ${icons[type]} text-lg"></i><span class="flex-1">${message}</span>`;
+            
+            container.appendChild(toast);
+            requestAnimationFrame(() => {
+                toast.classList.remove('translate-y-[-10px]', 'opacity-0');
+            });
+
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-[-10px]');
+                setTimeout(() => toast.remove(), 300);
+            }, 3500);
+        };
+
+        window.showConfirm = function(title, message) {
+            return new Promise((resolve) => {
+                const modal = document.getElementById('confirm-modal');
+                document.getElementById('confirm-title').textContent = title;
+                document.getElementById('confirm-message').textContent = message;
+                
+                modal.classList.remove('hidden');
+                modal.classList.add('flex');
+
+                const cleanup = (result) => {
+                    modal.classList.add('hidden');
+                    modal.classList.remove('flex');
+                    document.getElementById('confirm-yes').onclick = null;
+                    document.getElementById('confirm-no').onclick = null;
+                    resolve(result);
+                };
+
+                document.getElementById('confirm-yes').onclick = () => cleanup(true);
+                document.getElementById('confirm-no').onclick = () => cleanup(false);
+            });
+        };
+
+        // ==================== INITIALIZATION (FIREBASE + LOCAL FALLBACK) ====================
+        async function initApp() {
+            renderPartyCountingInputs();
+
+            if (firebaseConfig) {
+                try {
+                    app = initializeApp(firebaseConfig);
+                    auth = getAuth(app);
+                    db = getFirestore(app);
+
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        await signInWithCustomToken(auth, __initial_auth_token);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+
+                    onAuthStateChanged(auth, (user) => {
+                        if (user) {
+                            currentUser = user;
+                            useFirebase = true;
+                            showLandingScreen();
+                        }
+                    });
+                    return;
+                } catch (err) {
+                    console.warn("Firebase initialization fallback to local sync mode:", err);
+                }
+            }
+
+            // Fallback mode if Firebase config is unavailable
+            useFirebase = false;
+            document.getElementById('mode-badge').innerHTML = '<i class="fa-solid fa-laptop-code"></i> وضع محلي فوري';
+            showLandingScreen();
+        }
+
+        function showLandingScreen() {
+            document.getElementById('auth-loading').classList.add('hidden');
+            document.getElementById('role-selection-grid').classList.remove('hidden');
+            document.getElementById('role-selection-grid').classList.add('grid');
+            checkUrlParameters();
+        }
+
+        function checkUrlParameters() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const roomParam = urlParams.get('room');
+            if (roomParam) {
+                const cleanCode = roomParam.trim().toUpperCase().slice(0, 10);
+                document.getElementById('observer-room-input').value = cleanCode;
+                document.getElementById('supervisor-room-input').value = cleanCode;
+                showToast(`تم تعبئة رمز الغرفة (${cleanCode}) تلقائياً. اختر مكتبك واضغط اتصال.`, 'info');
+            }
+        }
+
+        function generateRoomCode() {
+            const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+            let suffix = '';
+            for (let i = 0; i < 4; i++) {
+                suffix += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            return `DZ-${suffix}`;
+        }
+
+        function switchView(viewName) {
+            document.getElementById('view-landing').classList.add('hidden');
+            document.getElementById('view-observer').classList.add('hidden');
+            document.getElementById('view-supervisor').classList.add('hidden');
+
+            document.getElementById(`view-${viewName}`).classList.remove('hidden');
+
+            const headerControls = document.getElementById('header-room-controls');
+            if (viewName === 'landing') {
+                headerControls.classList.add('hidden');
+                headerControls.classList.remove('flex');
+            } else {
+                headerControls.classList.remove('hidden');
+                headerControls.classList.add('flex');
+                document.getElementById('header-room-code').textContent = currentRoomCode;
+            }
+        }
+
+        // ==================== ROOM & ROLE ACTIONS ====================
+
+        window.createNewSupervisorRoom = async function() {
+            const newCode = generateRoomCode();
+            currentRoomCode = newCode;
+            currentRole = 'supervisor';
+            roomStationsMap = createDefaultStationsState();
+            logsData = [];
+
+            if (useFirebase && currentUser) {
+                try {
+                    const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', newCode);
+                    await setDoc(roomRef, {
+                        roomCode: newCode,
+                        totalRegistered: 1200,
+                        parties: ['RND', 'FLN', 'MCN', 'HAMS'],
+                        createdAt: serverTimestamp()
+                    });
+
+                    // Initialize the 4 stations in Firestore
+                    for (const st of DEFAULT_STATIONS) {
+                        const stRef = doc(db, 'artifacts', appId, 'public', 'data', `room_${newCode}_stations`, st.id);
+                        await setDoc(stRef, roomStationsMap[st.id]);
+                    }
+                } catch (err) {
+                    console.error(err);
+                }
+            }
+
+            enterSupervisorDashboard(newCode);
+            showToast(`تم إنشاء غرفة المتابعة بنجاح! الرمز: ${newCode}`, 'success');
+        };
+
+        window.loadDemoSimulation = function() {
+            currentRoomCode = 'DZ-2026';
+            currentRole = 'supervisor';
+            const now = Date.now();
+
+            roomStationsMap = {
+                station_01: {
+                    stationId: 'station_01', stationName: 'مكتب 01', registered: 300, voted: 168,
+                    votes: { RND: 46, FLN: 52, MCN: 29, HAMS: 35 }, invalid: 6, updatedAt: now - 120000
+                },
+                station_02: {
+                    stationId: 'station_02', stationName: 'مكتب 02', registered: 300, voted: 154,
+                    votes: { RND: 41, FLN: 39, MCN: 33, HAMS: 37 }, invalid: 4, updatedAt: now - 90000
+                },
+                station_03: {
+                    stationId: 'station_03', stationName: 'مكتب 03', registered: 300, voted: 185,
+                    votes: { RND: 55, FLN: 48, MCN: 31, HAMS: 46 }, invalid: 5, updatedAt: now - 45000
+                },
+                station_04: {
+                    stationId: 'station_04', stationName: 'مكتب 04', registered: 300, voted: 141,
+                    votes: { RND: 34, FLN: 44, MCN: 27, HAMS: 32 }, invalid: 4, updatedAt: now - 15000
+                }
+            };
+
+            logsData = [
+                { stationId: 'station_04', stationName: 'مكتب 04', type: 'counting', note: 'إرسال محضر فرز الأحزاب (RND: 34, FLN: 44, MCN: 27, HAMS: 32)', totalVoted: 141, registered: 300, timestamp: now - 15000 },
+                { stationId: 'station_03', stationName: 'مكتب 03', type: 'turnout', delta: 5, totalVoted: 185, registered: 300, timestamp: now - 45000 },
+                { stationId: 'station_02', stationName: 'مكتب 02', type: 'turnout', delta: 10, totalVoted: 154, registered: 300, timestamp: now - 90000 },
+                { stationId: 'station_01', stationName: 'مكتب 01', type: 'turnout', delta: 8, totalVoted: 168, registered: 300, timestamp: now - 120000 }
+            ];
+
+            switchView('supervisor');
+            document.getElementById('sup-banner-code').textContent = currentRoomCode;
+            initCharts();
+            renderSupervisorDashboard();
+            renderLiveFeed();
+            updateTimelineChart();
+            showToast('تم تحميل بيانات المحاكاة للمكاتب الأربعة (1,200 مسجل) والأحزاب الأربعة.', 'success');
+        };
+
+        window.joinAsSupervisor = function() {
+            const input = document.getElementById('supervisor-room-input').value.trim().toUpperCase();
+            if (input.length < 3) {
+                showToast('يرجى إدخال رمز غرفة صحيح.', 'warning');
+                return;
+            }
+            currentRoomCode = input;
+            currentRole = 'supervisor';
+            enterSupervisorDashboard(input);
+            showToast(`تم الدخول إلى غرفة المتابعة (${input})`, 'success');
+        };
+
+        window.joinAsObserver = function() {
+            const input = document.getElementById('observer-room-input').value.trim().toUpperCase();
+            if (input.length < 3) {
+                showToast('يرجى إدخال رمز الغرفة المشترك أولاً.', 'warning');
+                return;
+            }
+            const selectedStation = document.getElementById('landing-station-select').value;
+            currentRoomCode = input;
+            currentRole = 'observer';
+            activeStationId = selectedStation;
+
+            enterObserverInterface(input, selectedStation);
+            showToast(`متصل الآن بغرفة (${input}) — ${roomStationsMap[selectedStation].stationName}`, 'success');
+        };
+
+        window.leaveRoom = async function() {
+            const confirmed = await showConfirm('مغادرة الغرفة الحالية', 'هل تريد العودة إلى شاشة اختيار الدور؟');
+            if (!confirmed) return;
+
+            if (unsubscribeStations) unsubscribeStations();
+            if (unsubscribeLogs) unsubscribeLogs();
+
+            currentRoomCode = null;
+            currentRole = null;
+            switchView('landing');
+        };
+
+        window.copyRoomCode = function() {
+            if (!currentRoomCode) return;
+            copyToClipboard(currentRoomCode, `تم نسخ رمز الغرفة: ${currentRoomCode}`);
+        };
+
+        window.copyInviteLink = function() {
+            if (!currentRoomCode) return;
+            const url = new URL(window.location.href);
+            url.searchParams.set('room', currentRoomCode);
+            copyToClipboard(url.toString(), 'تم نسخ رابط الدعوة المباشر للمراقبين!');
+        };
+
+        function copyToClipboard(text, successMsg) {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {
+                document.execCommand('copy');
+                showToast(successMsg, 'success');
+            } catch (err) {
+                showToast('تعذر النسخ التلقائي، يرجى النسخ يدوياً.', 'error');
+            }
+            document.body.removeChild(textarea);
+        }
+
+        // ==================== OBSERVER INTERFACE LOGIC ====================
+
+        function renderPartyCountingInputs() {
+            const container = document.getElementById('party-counting-list');
+            container.innerHTML = PARTIES.map(p => `
+                <div class="p-4 rounded-2xl ${p.bgLight} border ${p.border}">
+                    <div class="flex items-center justify-between mb-2">
+                        <div>
+                            <span class="font-black text-base ${p.text}">${p.name}</span>
+                            <span class="text-xs text-slate-600 mr-1.5 font-semibold">${p.fullName}</span>
+                        </div>
+                        <span id="count-val-${p.id}" class="font-black text-2xl ${p.text}">0</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="adjustPartyVote('${p.id}', -1)" class="btn-tap bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 font-black px-3 py-2 rounded-xl text-sm transition">-1</button>
+                        <button onclick="adjustPartyVote('${p.id}', 1)" class="btn-tap ${p.btn} text-white font-black px-3.5 py-2 rounded-xl text-sm shadow-sm transition">+1</button>
+                        <button onclick="adjustPartyVote('${p.id}', 5)" class="btn-tap ${p.btn} text-white font-black px-3.5 py-2 rounded-xl text-sm shadow-sm transition">+5</button>
+                        <button onclick="adjustPartyVote('${p.id}', 10)" class="btn-tap ${p.btn} text-white font-black px-3.5 py-2 rounded-xl text-sm shadow-sm transition">+10</button>
+                        <input type="number" id="input-party-${p.id}" min="0" value="0" onchange="setDirectPartyVote('${p.id}', this.value)"
+                            class="w-20 bg-white border border-slate-300 rounded-xl px-2 py-2 text-center font-black text-sm text-slate-800 focus:outline-none">
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function enterObserverInterface(roomCode, stationId) {
+            switchView('observer');
+            document.getElementById('observer-station-select').value = stationId;
+
+            if (useFirebase && currentUser) {
+                const stationsCol = collection(db, 'artifacts', appId, 'public', 'data', `room_${roomCode}_stations`);
+                unsubscribeStations = onSnapshot(stationsCol, (snapshot) => {
+                    snapshot.forEach(docSnap => {
+                        const data = docSnap.data();
+                        if (roomStationsMap[data.stationId]) {
+                            roomStationsMap[data.stationId] = {
+                                ...roomStationsMap[data.stationId],
+                                ...data,
+                                votes: { RND: 0, FLN: 0, MCN: 0, HAMS: 0, ...(data.votes || {}) }
+                            };
+                        }
+                    });
+                    refreshObserverUI();
+                }, (err) => console.error(err));
+            } else {
+                refreshObserverUI();
+            }
+        }
+
+        window.switchObserverStation = function(newStationId) {
+            activeStationId = newStationId;
+            refreshObserverUI();
+            showToast(`تم التبديل إلى ${roomStationsMap[activeStationId].stationName}`, 'info');
+        };
+
+        window.switchObserverTab = function(tab) {
+            const btnTurnout = document.getElementById('tab-btn-turnout');
+            const btnCounting = document.getElementById('tab-btn-counting');
+            const viewTurnout = document.getElementById('obs-tab-turnout');
+            const viewCounting = document.getElementById('obs-tab-counting');
+
+            if (tab === 'turnout') {
+                btnTurnout.className = 'py-3 px-4 rounded-xl text-sm font-extrabold bg-white text-blue-700 shadow-sm transition flex items-center justify-center gap-2';
+                btnCounting.className = 'py-3 px-4 rounded-xl text-sm font-extrabold text-slate-600 hover:text-slate-900 transition flex items-center justify-center gap-2';
+                viewTurnout.classList.remove('hidden');
+                viewCounting.classList.add('hidden');
+            } else {
+                btnCounting.className = 'py-3 px-4 rounded-xl text-sm font-extrabold bg-white text-indigo-700 shadow-sm transition flex items-center justify-center gap-2';
+                btnTurnout.className = 'py-3 px-4 rounded-xl text-sm font-extrabold text-slate-600 hover:text-slate-900 transition flex items-center justify-center gap-2';
+                viewCounting.classList.remove('hidden');
+                viewTurnout.classList.add('hidden');
+            }
+        };
+
+        function refreshObserverUI() {
+            const st = roomStationsMap[activeStationId];
+            if (!st) return;
+
+            document.getElementById('obs-station-title').textContent = st.stationName;
+            document.getElementById('station-registered-input').value = st.registered;
+
+            const pct = st.registered > 0 ? Math.min(100, ((st.voted / st.registered) * 100)).toFixed(1) : '0.0';
+            document.getElementById('obs-percentage').textContent = `${pct}%`;
+            document.getElementById('obs-voted-display').textContent = st.voted.toLocaleString('en-US');
+            document.getElementById('obs-reg-display').textContent = st.registered.toLocaleString('en-US');
+            document.getElementById('obs-progress-bar').style.width = `${pct}%`;
+
+            // Refresh Party Counting Inputs
+            let countedSum = 0;
+            PARTIES.forEach(p => {
+                const v = Number(st.votes?.[p.id]) || 0;
+                countedSum += v;
+                document.getElementById(`count-val-${p.id}`).textContent = v;
+                document.getElementById(`input-party-${p.id}`).value = v;
+            });
+
+            const inv = Number(st.invalid) || 0;
+            countedSum += inv;
+            document.getElementById('count-val-invalid').textContent = inv;
+            document.getElementById('input-party-invalid').value = inv;
+
+            document.getElementById('counting-sum-badge').textContent = `${countedSum} / ${st.voted}`;
+
+            const warnBox = document.getElementById('counting-warning-box');
+            if (countedSum > st.voted) {
+                warnBox.classList.remove('hidden');
+                document.getElementById('counting-warning-text').textContent = `تنبيه: مجموع الفرز (${countedSum}) يتجاوز عدد المصوتين المسجل بالمكتب (${st.voted})!`;
+            } else {
+                warnBox.classList.add('hidden');
+            }
+        }
+
+        window.updateStationRegistered = async function() {
+            const regVal = parseInt(document.getElementById('station-registered-input').value, 10);
+            if (isNaN(regVal) || regVal <= 0) {
+                showToast('يرجى إدخال عدد مسجلين صحيح أكبر من 0.', 'warning');
+                return;
+            }
+            roomStationsMap[activeStationId].registered = regVal;
+            refreshObserverUI();
+            await persistStationState(0, `تحديث عدد المسجلين إلى ${regVal}`);
+            showToast('تم تحديث عدد الناخبين المسجلين بالمكتب.', 'success');
+        };
+
+        window.incrementVotes = async function(delta) {
+            const st = roomStationsMap[activeStationId];
+            const nextVoted = st.voted + delta;
+            if (nextVoted < 0) {
+                showToast('عدد المصوتين لا يمكن أن يكون أقل من صفر.', 'warning');
+                return;
+            }
+            if (nextVoted > st.registered) {
+                showToast(`تنبيه: عدد المصوتين تجاوز مسجلي المكتب (${st.registered})!`, 'warning');
+            }
+            st.voted = nextVoted;
+            refreshObserverUI();
+            await persistStationState(delta, null);
+        };
+
+        window.setManualVotes = async function() {
+            const val = parseInt(document.getElementById('manual-votes-input').value, 10);
+            if (isNaN(val) || val < 0) {
+                showToast('يرجى إدخال عدد مصوتين صحيح.', 'warning');
+                return;
+            }
+            const st = roomStationsMap[activeStationId];
+            const delta = val - st.voted;
+            st.voted = val;
+            document.getElementById('manual-votes-input').value = '';
+            refreshObserverUI();
+            await persistStationState(delta, 'تحديث يدوي لإجمالي المصوتين');
+            showToast('تم تحديث إجمالي المصوتين بالمكتب.', 'success');
+        };
+
+        window.adjustPartyVote = function(partyId, delta) {
+            const st = roomStationsMap[activeStationId];
+            if (partyId === 'invalid') {
+                st.invalid = Math.max(0, (st.invalid || 0) + delta);
+            } else {
+                st.votes[partyId] = Math.max(0, (st.votes[partyId] || 0) + delta);
+            }
+            refreshObserverUI();
+        };
+
+        window.setDirectPartyVote = function(partyId, rawVal) {
+            const val = Math.max(0, parseInt(rawVal, 10) || 0);
+            const st = roomStationsMap[activeStationId];
+            if (partyId === 'invalid') {
+                st.invalid = val;
+            } else {
+                st.votes[partyId] = val;
+            }
+            refreshObserverUI();
+        };
+
+        window.submitCountingResults = async function() {
+            const st = roomStationsMap[activeStationId];
+            const v = st.votes;
+            const summaryNote = `نتائج الفرز: RND (${v.RND}) • FLN (${v.FLN}) • MCN (${v.MCN}) • HAMS (${v.HAMS}) • ملغاة (${st.invalid})`;
+            await persistStationState(0, summaryNote);
+            showToast(`تم إرسال نتائج فرز ${st.stationName} إلى المشرف بنجاح!`, 'success');
+        };
+
+        async function persistStationState(delta, customNote) {
+            const badge = document.getElementById('sync-status-badge');
+            badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200';
+            badge.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> جاري الإرسال...';
+
+            const st = roomStationsMap[activeStationId];
+            st.updatedAt = Date.now();
+
+            // Record in local logs
+            if (delta !== 0 || customNote) {
+                logsData.unshift({
+                    stationId: st.stationId,
+                    stationName: st.stationName,
+                    delta: delta,
+                    totalVoted: st.voted,
+                    registered: st.registered,
+                    note: customNote || '',
+                    timestamp: st.updatedAt
+                });
+            }
+
+            if (useFirebase && currentUser && currentRoomCode) {
+                try {
+                    const stRef = doc(db, 'artifacts', appId, 'public', 'data', `room_${currentRoomCode}_stations`, st.stationId);
+                    await setDoc(stRef, st, { merge: true });
+
+                    if (delta !== 0 || customNote) {
+                        const logsCol = collection(db, 'artifacts', appId, 'public', 'data', `room_${currentRoomCode}_logs`);
+                        await addDoc(logsCol, {
+                            stationId: st.stationId,
+                            stationName: st.stationName,
+                            delta: delta,
+                            totalVoted: st.voted,
+                            registered: st.registered,
+                            note: customNote || '',
+                            timestamp: st.updatedAt
+                        });
+                    }
+                } catch (err) {
+                    console.error("Firestore sync error:", err);
+                }
+            }
+
+            badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200';
+            badge.innerHTML = '<i class="fa-solid fa-cloud-arrow-up"></i> متزامن لحظياً';
+            const now = new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            document.getElementById('obs-last-update').textContent = `آخر إرسال: ${now}`;
+        }
+
+        // ==================== SUPERVISOR DASHBOARD LOGIC ====================
+
+        function enterSupervisorDashboard(roomCode) {
+            switchView('supervisor');
+            document.getElementById('sup-banner-code').textContent = roomCode;
+
+            initCharts();
+            renderSupervisorDashboard();
+            renderLiveFeed();
+
+            if (useFirebase && currentUser) {
+                const stationsCol = collection(db, 'artifacts', appId, 'public', 'data', `room_${roomCode}_stations`);
+                unsubscribeStations = onSnapshot(stationsCol, (snapshot) => {
+                    snapshot.forEach(docSnap => {
+                        const data = docSnap.data();
+                        if (roomStationsMap[data.stationId]) {
+                            roomStationsMap[data.stationId] = {
+                                ...roomStationsMap[data.stationId],
+                                ...data,
+                                votes: { RND: 0, FLN: 0, MCN: 0, HAMS: 0, ...(data.votes || {}) }
+                            };
+                        }
+                    });
+                    renderSupervisorDashboard();
+                }, (err) => console.error(err));
+
+                const logsCol = collection(db, 'artifacts', appId, 'public', 'data', `room_${roomCode}_logs`);
+                unsubscribeLogs = onSnapshot(logsCol, (snapshot) => {
+                    const fetchedLogs = [];
+                    snapshot.forEach(docSnap => fetchedLogs.push(docSnap.data()));
+                    fetchedLogs.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                    logsData = fetchedLogs;
+                    renderLiveFeed();
+                    updateTimelineChart();
+                }, (err) => console.error(err));
+            }
+        }
+
+        function renderSupervisorDashboard() {
+            const stationsList = DEFAULT_STATIONS.map(def => roomStationsMap[def.id]);
+
+            let totalReg = 0;
+            let totalVoted = 0;
+            let activeStationsCount = 0;
+            let totalInvalid = 0;
+            const partyTotals = { RND: 0, FLN: 0, MCN: 0, HAMS: 0 };
+
+            stationsList.forEach(st => {
+                totalReg += Number(st.registered) || 0;
+                totalVoted += Number(st.voted) || 0;
+                totalInvalid += Number(st.invalid) || 0;
+
+                const pVotes = st.votes || {};
+                let stPartySum = 0;
+                PARTIES.forEach(p => {
+                    const val = Number(pVotes[p.id]) || 0;
+                    partyTotals[p.id] += val;
+                    stPartySum += val;
+                });
+
+                if (st.voted > 0 || stPartySum > 0 || st.updatedAt) {
+                    activeStationsCount++;
+                }
+            });
+
+            const overallPct = totalReg > 0 ? ((totalVoted / totalReg) * 100).toFixed(2) : '0.00';
+
+            // Update Top KPIs
+            document.getElementById('kpi-percentage').textContent = `${overallPct}%`;
+            document.getElementById('kpi-progress-bar').style.width = `${Math.min(100, Number(overallPct))}%`;
+            document.getElementById('kpi-total-voted').textContent = totalVoted.toLocaleString('en-US');
+            document.getElementById('kpi-reg-sub').textContent = totalReg.toLocaleString('en-US');
+            document.getElementById('kpi-total-registered').textContent = totalReg.toLocaleString('en-US');
+            document.getElementById('kpi-stations-count').textContent = activeStationsCount;
+
+            const nowStr = new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            document.getElementById('sup-last-sync').textContent = `آخر مزامنة: ${nowStr}`;
+
+            // Update 4 Parties KPI Cards
+            const totalValidVotes = Object.values(partyTotals).reduce((a, b) => a + b, 0);
+            document.getElementById('total-valid-votes').textContent = totalValidVotes.toLocaleString('en-US');
+            document.getElementById('total-invalid-votes').textContent = totalInvalid.toLocaleString('en-US');
+
+            // Find leading party
+            let maxVotes = 0;
+            PARTIES.forEach(p => { if (partyTotals[p.id] > maxVotes) maxVotes = partyTotals[p.id]; });
+
+            const partiesGrid = document.getElementById('parties-kpi-grid');
+            partiesGrid.innerHTML = PARTIES.map(p => {
+                const count = partyTotals[p.id];
+                const sharePct = totalValidVotes > 0 ? ((count / totalValidVotes) * 100).toFixed(1) : '0.0';
+                const isLeader = maxVotes > 0 && count === maxVotes;
+
+                return `
+                    <div class="rounded-2xl p-4 border-2 ${isLeader ? 'border-amber-400 bg-amber-50/30 shadow-md' : `${p.border} ${p.bgLight}`} relative transition">
+                        ${isLeader ? '<span class="absolute -top-2.5 left-3 bg-amber-400 text-slate-900 text-[10px] font-black px-2.5 py-0.5 rounded-full shadow-sm"><i class="fa-solid fa-crown"></i> المتصدر</span>' : ''}
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="font-black text-lg ${p.text}">${p.name}</span>
+                            <span class="font-extrabold text-sm ${p.text}">${sharePct}%</span>
+                        </div>
+                        <p class="text-[11px] text-slate-500 font-semibold mb-3">${p.fullName}</p>
+                        <div class="text-2xl font-black text-slate-900 mb-2">${count.toLocaleString('en-US')} <span class="text-xs font-normal text-slate-500">صوت</span></div>
+                        <div class="w-full bg-white h-2 rounded-full overflow-hidden border border-slate-200/60">
+                            <div class="h-full rounded-full transition-all duration-500" style="width: ${sharePct}%; background-color: ${p.color}"></div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            // Update Stations Table
+            const tbody = document.getElementById('stations-table-body');
+            tbody.innerHTML = stationsList.map(st => {
+                const pct = st.registered > 0 ? ((st.voted / st.registered) * 100).toFixed(1) : '0.0';
+                const v = st.votes || { RND: 0, FLN: 0, MCN: 0, HAMS: 0 };
+                return `
+                    <tr class="hover:bg-slate-50 transition">
+                        <td class="py-3.5 px-3 text-right font-extrabold text-slate-800">${st.stationName}</td>
+                        <td class="py-3.5 px-2 font-semibold text-slate-600">${st.registered}</td>
+                        <td class="py-3.5 px-2 font-black text-emerald-600">${st.voted}</td>
+                        <td class="py-3.5 px-3">
+                            <span class="px-2.5 py-1 rounded-lg text-xs font-black bg-blue-50 text-blue-700">${pct}%</span>
+                        </td>
+                        <td class="py-3.5 px-2 font-bold text-blue-700">${v.RND || 0}</td>
+                        <td class="py-3.5 px-2 font-bold text-rose-700">${v.FLN || 0}</td>
+                        <td class="py-3.5 px-2 font-bold text-amber-700">${v.MCN || 0}</td>
+                        <td class="py-3.5 px-2 font-bold text-emerald-700">${v.HAMS || 0}</td>
+                        <td class="py-3.5 px-2 font-semibold text-slate-500">${st.invalid || 0}</td>
+                    </tr>
+                `;
+            }).join('');
+
+            // Update Table Footer Totals
+            document.getElementById('stations-table-foot').innerHTML = `
+                <tr>
+                    <td class="py-3.5 px-3 text-right">الإجمالي العام</td>
+                    <td class="py-3.5 px-2">${totalReg.toLocaleString('en-US')}</td>
+                    <td class="py-3.5 px-2 text-emerald-700">${totalVoted.toLocaleString('en-US')}</td>
+                    <td class="py-3.5 px-3 text-blue-800">${overallPct}%</td>
+                    <td class="py-3.5 px-2 text-blue-800">${partyTotals.RND}</td>
+                    <td class="py-3.5 px-2 text-rose-800">${partyTotals.FLN}</td>
+                    <td class="py-3.5 px-2 text-amber-800">${partyTotals.MCN}</td>
+                    <td class="py-3.5 px-2 text-emerald-800">${partyTotals.HAMS}</td>
+                    <td class="py-3.5 px-2 text-slate-600">${totalInvalid}</td>
+                </tr>
+            `;
+
+            // Update Charts
+            updateChartsData(stationsList, partyTotals);
+        }
+
+        function renderLiveFeed() {
+            const container = document.getElementById('live-feed-list');
+            if (logsData.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-10 text-slate-400 text-xs">
+                        ستظهر هنا التحديثات اللحظية الواردة من المكاتب الأربعة.
+                    </div>`;
+                return;
+            }
+
+            container.innerHTML = logsData.slice(0, 40).map(log => {
+                const timeStr = log.timestamp ? new Date(log.timestamp).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
+                const delta = Number(log.delta) || 0;
+                
+                let badgeHtml = '';
+                if (delta > 0) {
+                    badgeHtml = `<span class="px-2 py-0.5 rounded-md text-xs font-black bg-emerald-100 text-emerald-700">+${delta}</span>`;
+                } else if (delta < 0) {
+                    badgeHtml = `<span class="px-2 py-0.5 rounded-md text-xs font-black bg-rose-100 text-rose-700">${delta}</span>`;
+                } else {
+                    badgeHtml = `<span class="px-2 py-0.5 rounded-md text-xs font-bold bg-indigo-100 text-indigo-700">فرز / تحديث</span>`;
+                }
+
+                return `
+                    <div class="p-3 rounded-2xl bg-slate-50 border border-slate-100 flex items-start justify-between gap-2">
+                        <div>
+                            <div class="flex items-center gap-2 mb-1">
+                                <span class="font-extrabold text-xs text-slate-800">${escapeHtml(log.stationName)}</span>
+                                ${badgeHtml}
+                            </div>
+                            <p class="text-[11px] text-slate-600 leading-relaxed">
+                                ${log.note ? escapeHtml(log.note) : `المصوتون بالمكتب: <strong>${log.totalVoted}</strong> من ${log.registered}`}
+                            </p>
+                        </div>
+                        <span class="text-[10px] font-mono text-slate-400 whitespace-nowrap">${timeStr}</span>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // ==================== CHARTS (Chart.js) ====================
+
+        function initCharts() {
+            Chart.defaults.font.family = 'Cairo, sans-serif';
+
+            const ctxStations = document.getElementById('stationsChart').getContext('2d');
+            if (stationsChartInstance) stationsChartInstance.destroy();
+            stationsChartInstance = new Chart(ctxStations, {
+                type: 'bar',
+                data: {
+                    labels: ['مكتب 01', 'مكتب 02', 'مكتب 03', 'مكتب 04'],
+                    datasets: [{
+                        label: 'نسبة المشاركة (%)',
+                        data: [0, 0, 0, 0],
+                        backgroundColor: ['#3b82f6', '#6366f1', '#10b981', '#0ea5e9'],
+                        borderRadius: 8,
+                        maxBarThickness: 40
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, max: 100, ticks: { callback: v => v + '%' } } }
+                }
+            });
+
+            const ctxParties = document.getElementById('partiesChart').getContext('2d');
+            if (partiesChartInstance) partiesChartInstance.destroy();
+            partiesChartInstance = new Chart(ctxParties, {
+                type: 'doughnut',
+                data: {
+                    labels: ['RND', 'FLN', 'MCN', 'HAMS'],
+                    datasets: [{
+                        data: [0, 0, 0, 0],
+                        backgroundColor: ['#2563eb', '#e11d48', '#d97706', '#059669'],
+                        borderWidth: 2,
+                        borderColor: '#ffffff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom', labels: { font: { weight: 'bold' } } }
+                    }
+                }
+            });
+
+            const ctxTime = document.getElementById('timelineChart').getContext('2d');
+            if (timelineChartInstance) timelineChartInstance.destroy();
+            timelineChartInstance = new Chart(ctxTime, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'نسبة المشاركة الإجمالية (%)',
+                        data: [],
+                        borderColor: '#2563eb',
+                        backgroundColor: 'rgba(37, 99, 235, 0.12)',
+                        borderWidth: 3,
+                        fill: true,
+                        tension: 0.35,
+                        pointRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, max: 100, ticks: { callback: v => v + '%' } } }
+                }
+            });
+        }
+
+        function updateChartsData(stationsList, partyTotals) {
+            if (stationsChartInstance) {
+                stationsChartInstance.data.datasets[0].data = stationsList.map(st => {
+                    return st.registered > 0 ? Number(((st.voted / st.registered) * 100).toFixed(1)) : 0;
+                });
+                stationsChartInstance.update();
+            }
+
+            if (partiesChartInstance) {
+                partiesChartInstance.data.datasets[0].data = [
+                    partyTotals.RND,
+                    partyTotals.FLN,
+                    partyTotals.MCN,
+                    partyTotals.HAMS
+                ];
+                partiesChartInstance.update();
+            }
+        }
+
+        function updateTimelineChart() {
+            if (!timelineChartInstance || logsData.length === 0) return;
+
+            const chronological = [...logsData].reverse();
+            const latestVoted = { station_01: 0, station_02: 0, station_03: 0, station_04: 0 };
+            const latestReg = { station_01: 300, station_02: 300, station_03: 300, station_04: 300 };
+
+            const labels = [];
+            const points = [];
+            const step = Math.max(1, Math.floor(chronological.length / 15));
+
+            chronological.forEach((log, idx) => {
+                if (latestVoted.hasOwnProperty(log.stationId)) {
+                    latestVoted[log.stationId] = Number(log.totalVoted) || 0;
+                    latestReg[log.stationId] = Number(log.registered) || 300;
+                }
+                if (idx % step === 0 || idx === chronological.length - 1) {
+                    const sumV = Object.values(latestVoted).reduce((a, b) => a + b, 0);
+                    const sumR = Object.values(latestReg).reduce((a, b) => a + b, 0);
+                    const pct = sumR > 0 ? Number(((sumV / sumR) * 100).toFixed(2)) : 0;
+                    labels.push(new Date(log.timestamp).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }));
+                    points.push(pct);
+                }
+            });
+
+            timelineChartInstance.data.labels = labels;
+            timelineChartInstance.data.datasets[0].data = points;
+            timelineChartInstance.update();
+        }
+
+        // ==================== EXPORT REPORTS (EXCEL CSV & HTML) ====================
+
+        window.exportToCSV = function() {
+            const stationsList = DEFAULT_STATIONS.map(def => roomStationsMap[def.id]);
+            let csv = "\uFEFF"; // UTF-8 BOM for Arabic Excel
+            csv += "المكتب,الناخبون المسجلون,عدد المصوتين,نسبة المشاركة (%),RND,FLN,MCN,HAMS,الأوراق الملغاة\n";
+
+            let tReg = 0, tVot = 0, tRnd = 0, tFln = 0, tMcn = 0, tHams = 0, tInv = 0;
+
+            stationsList.forEach(st => {
+                const pct = st.registered > 0 ? ((st.voted / st.registered) * 100).toFixed(2) : '0.00';
+                const v = st.votes || { RND: 0, FLN: 0, MCN: 0, HAMS: 0 };
+                tReg += st.registered;
+                tVot += st.voted;
+                tRnd += v.RND || 0;
+                tFln += v.FLN || 0;
+                tMcn += v.MCN || 0;
+                tHams += v.HAMS || 0;
+                tInv += st.invalid || 0;
+
+                csv += `"${st.stationName}",${st.registered},${st.voted},${pct}%,${v.RND || 0},${v.FLN || 0},${v.MCN || 0},${v.HAMS || 0},${st.invalid || 0}\n`;
+            });
+
+            const tPct = tReg > 0 ? ((tVot / tReg) * 100).toFixed(2) : '0.00';
+            csv += `"الإجمالي العام",${tReg},${tVot},${tPct}%,${tRnd},${tFln},${tMcn},${tHams},${tInv}\n`;
+
+            downloadFile(csv, `تقرير_المشاركة_والنتائج_${currentRoomCode}.csv`, 'text/csv;charset=utf-8;');
+            showToast('تم تحميل ملف Excel/CSV بنجاح!', 'success');
+        };
+
+        window.exportHTMLReport = function() {
+            const stationsList = DEFAULT_STATIONS.map(def => roomStationsMap[def.id]);
+            let tReg = 0, tVot = 0, tRnd = 0, tFln = 0, tMcn = 0, tHams = 0, tInv = 0;
+
+            const rowsHtml = stationsList.map(st => {
+                const pct = st.registered > 0 ? ((st.voted / st.registered) * 100).toFixed(2) : '0.00';
+                const v = st.votes || { RND: 0, FLN: 0, MCN: 0, HAMS: 0 };
+                tReg += st.registered;
+                tVot += st.voted;
+                tRnd += v.RND || 0;
+                tFln += v.FLN || 0;
+                tMcn += v.MCN || 0;
+                tHams += v.HAMS || 0;
+                tInv += st.invalid || 0;
+
+                return `<tr>
+                    <td><strong>${st.stationName}</strong></td>
+                    <td>${st.registered}</td>
+                    <td>${st.voted}</td>
+                    <td><strong>${pct}%</strong></td>
+                    <td>${v.RND || 0}</td>
+                    <td>${v.FLN || 0}</td>
+                    <td>${v.MCN || 0}</td>
+                    <td>${v.HAMS || 0}</td>
+                    <td>${st.invalid || 0}</td>
+                </tr>`;
+            }).join('');
+
+            const tPct = tReg > 0 ? ((tVot / tReg) * 100).toFixed(2) : '0.00';
+            const totalValid = tRnd + tFln + tMcn + tHams;
+            const pPct = (val) => totalValid > 0 ? ((val / totalValid) * 100).toFixed(1) : '0.0';
+
+            const htmlReport = `<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>تقرير المشاركة ونتائج الفرز - غرفة ${currentRoomCode}</title>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;800&display=swap" rel="stylesheet">
+<style>
+body{font-family:'Cairo',sans-serif;background:#f8fafc;color:#0f172a;padding:24px;line-height:1.6}
+.box{max-width:1000px;margin:0 auto;background:#fff;padding:28px;border-radius:16px;box-shadow:0 4px 15px rgba(0,0,0,.05)}
+h1{color:#1e3a8a;margin-bottom:4px}
+.sub{color:#64748b;font-size:14px;margin-bottom:20px}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px}
+.card{background:#f1f5f9;padding:16px;border-radius:12px;text-align:center}
+.card strong{display:block;font-size:24px;color:#1d4ed8}
+table{width:100%;border-collapse:collapse;margin-top:12px;text-align:center}
+th{background:#1e3a8a;color:#fff;padding:10px}
+td{padding:10px;border-bottom:1px solid #e2e8f0}
+tfoot td{background:#e2e8f0;font-weight:800}
+@media print{.no-print{display:none}}
+</style>
+</head>
+<body>
+<div class="box">
+<div style="display:flex;justify-content:space-between;align-items:center">
+<div><h1>تقرير متابعة نسبة المشاركة ونتائج الفرز</h1><div class="sub">رمز الغرفة: ${currentRoomCode} | التاريخ: ${new Date().toLocaleString('ar-EG')}</div></div>
+<button class="no-print" onclick="window.print()" style="padding:10px 18px;background:#1e3a8a;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:inherit;font-weight:700">طباعة / حفظ PDF</button>
+</div>
+<div class="grid">
+<div class="card"><span>إجمالي المسجلين</span><strong>${tReg.toLocaleString('en-US')}</strong></div>
+<div class="card"><span>إجمالي المصوتين</span><strong>${tVot.toLocaleString('en-US')}</strong></div>
+<div class="card"><span>نسبة المشاركة</span><strong>${tPct}%</strong></div>
+<div class="card"><span>الأصوات المعبر عنها</span><strong>${totalValid.toLocaleString('en-US')}</strong></div>
+</div>
+<h3>نتائج الأحزاب الأربعة</h3>
+<div class="grid">
+<div class="card"><span>RND</span><strong>${tRnd} (${pPct(tRnd)}%)</strong></div>
+<div class="card"><span>FLN</span><strong>${tFln} (${pPct(tFln)}%)</strong></div>
+<div class="card"><span>MCN</span><strong>${tMcn} (${pPct(tMcn)}%)</strong></div>
+<div class="card"><span>HAMS</span><strong>${tHams} (${pPct(tHams)}%)</strong></div>
+</div>
+<h3>تفاصيل المكاتب الأربعة</h3>
+<table>
+<thead><tr><th>المكتب</th><th>المسجلون</th><th>المصوتون</th><th>المشاركة</th><th>RND</th><th>FLN</th><th>MCN</th><th>HAMS</th><th>ملغاة</th></tr></thead>
+<tbody>${rowsHtml}</tbody>
+<tfoot><tr><td>الإجمالي</td><td>${tReg}</td><td>${tVot}</td><td>${tPct}%</td><td>${tRnd}</td><td>${tFln}</td><td>${tMcn}</td><td>${tHams}</td><td>${tInv}</td></tr></tfoot>
+</table>
+</div>
+</body>
+</html>`;
+
+            downloadFile(htmlReport, `تقرير_المشاركة_والنتائج_${currentRoomCode}.html`, 'text/html;charset=utf-8;');
+            showToast('تم تحميل تقرير HTML بنجاح!', 'success');
+        };
+
+        function downloadFile(content, filename, mimeType) {
+            const blob = new Blob([content], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+
+        function escapeHtml(str) {
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        window.addEventListener('DOMContentLoaded', initApp);
+    </script>
+</body>
+</html>
